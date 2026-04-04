@@ -1,4 +1,4 @@
-name: Node CI/CD Pipeline
+name: Node CI/CD (Self Hosted)
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -21,12 +21,11 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Run Tests and Save Output
+      - name: Run Tests
         run: |
-          echo "Running tests..."
           npm run check > test-results.txt || true
 
-      - name: Upload Test Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: test-results
@@ -38,30 +37,54 @@ jobs:
     needs: test
 
     steps:
-      - name: Download Test Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: test-results
-
-      - name: Show Test Results
-        run: cat test-results.txt
-
-      - name: Checkout Code
+      - name: Checkout Code (VERY IMPORTANT)
         uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install PM2
+        run: npm install -g pm2
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Install PM2 (if not installed)
-        run: npm install -g pm2
+      - name: Stop Old App
+        run: pm2 delete node-app || true
 
-      - name: Deploy Application
+      - name: Start App
+        run: pm2 start src/server.js --name node-app
+
+      - name: Save PM2
+        run: pm2 save
+
+      - name: Setup Nginx Reverse Proxy
         run: |
-          echo "Stopping old app if exists..."
-          pm2 delete node-app || true
+          sudo bash -c 'cat > /etc/nginx/sites-available/default <<EOF
+          server {
+              listen 80;
 
-          echo "Starting new app..."
-          pm2 start "./src/server.js" --name node-app
+              location / {
+                  proxy_pass http://127.0.0.1:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade \$http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host \$host;
+              }
+          }
+          EOF'
 
-          echo "Saving PM2 process..."
-          pm2 save
+      - name: Restart Nginx
+        run: |
+          sudo nginx -t
+          sudo systemctl restart nginx
+
+      - name: Show Test Results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+
+      - name: Print Test Results
+        run: cat test-results.txt
