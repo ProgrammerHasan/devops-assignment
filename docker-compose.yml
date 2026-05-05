@@ -1,0 +1,17 @@
+services:
+  nginx:
+    image: nginx:latest
+    container_name: module9-nginx
+    ports:
+      - "80:80"
+
+  express-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: programmerhasan/module-9-express-app:latest
+    container_name: module9-express-app
+    ports:
+      - "8080:5000"
+    depends_on:
+      - nginx
